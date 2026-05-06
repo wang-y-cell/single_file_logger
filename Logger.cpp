@@ -55,7 +55,7 @@ std::string buildThreadId() {
 } // namespace
 
 Logger::Logger() {
-    output_callback_ = [this](const LogRecord& rec) { writeRecord(rec); };
+    format_callback_ = [this](const LogRecord& rec) { return writeFormat(rec); };
     worker_ = std::thread([this] { workerLoop(); });
 }
 
@@ -96,35 +96,38 @@ void Logger::workerLoop() {
             rec = std::move(queue_.front());
             queue_.pop();
         }
-        OutputCallback cb;
+        FormatCallback fmt;
         {
             std::lock_guard<std::mutex> lock(callback_mutex_);
-            cb = output_callback_;
+            fmt = format_callback_;
         }
-        if (cb) {
-            cb(rec);
-        } else {
-            writeRecord(rec);
-        }
+        const std::string line = fmt ? fmt(rec) : writeFormat(rec);
+        writeRecord(line);
     }
 }
 
-void Logger::setOutputCallback(OutputCallback cb) {
+void Logger::setFormatCallback(FormatCallback cb) {
     std::lock_guard<std::mutex> lock(callback_mutex_);
     if (cb) {
-        output_callback_ = std::move(cb);
+        format_callback_ = std::move(cb);
     } else {
-        output_callback_ = [this](const LogRecord& rec) { writeRecord(rec); };
+        format_callback_ = [this](const LogRecord& rec) { return writeFormat(rec); };
     }
 }
 
-void Logger::writeRecord(const LogRecord& rec) {
+std::string Logger::writeFormat(const LogRecord& rec) const {
     std::ostringstream stream;
     stream << rec.timestamp << " [" << levelName(rec.level) << "]"
            << " [" << rec.module << "]"
            << " [tid:" << rec.thread_id << "] "
            << rec.message;
-    const std::string line = stream.str();
+    return stream.str();
+}
+
+void Logger::writeRecord(const std::string& line) {
+    if (line.empty()) {
+        return;
+    }
 
     std::lock_guard<std::mutex> lock(io_mutex_);
     if (console_enabled_) {

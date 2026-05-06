@@ -99,13 +99,14 @@ public:
         std::string thread_id;
     };
 
-    using OutputCallback = std::function<void(const LogRecord&)>;
+    /** 仅负责把 LogRecord 格式化成一行文本；是否写终端/文件由内部 writeRecord(string) 决定。 */
+    using FormatCallback = std::function<std::string(const LogRecord&)>;
 
     /**
-    * @brief 设置日志输出回调（在后台输出线程中调用）。默认可用内置格式。
-    * @param cb 回调；传入空 function 则恢复为内置 writeRecord 行为（控制台/文件）。
+    * @brief 设置日志文本格式回调（在后台输出线程中调用）。
+    * @param cb 返回一行日志字符串；传入空 function 则恢复内置格式（与 writeFormat 一致）。
     */
-    void setOutputCallback(OutputCallback cb);
+    void setFormatCallback(FormatCallback cb);
 
 private:
 
@@ -118,7 +119,10 @@ private:
     static const char* levelName(Level level);
 
     void workerLoop();
-    void writeRecord(const LogRecord& rec);
+    /** 内置默认格式，供默认 FormatCallback 使用。 */
+    std::string writeFormat(const LogRecord& rec) const;
+    /** 根据 enableConsole / setFile 写入终端与文件。 */
+    void writeRecord(const std::string& line);
 
     std::atomic<int> level_{static_cast<int>(Level::Info)};
     std::mutex io_mutex_;
@@ -132,7 +136,7 @@ private:
     std::atomic<bool> stop_{false};
 
     std::mutex callback_mutex_;
-    OutputCallback output_callback_;
+    FormatCallback format_callback_;
 };
 
 #define LOG_DEBUG(module, message_expr)                                                                                 \
